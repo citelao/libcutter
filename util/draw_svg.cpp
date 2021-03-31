@@ -1,10 +1,12 @@
 #include <iostream>
 #include <cstring>
 #include <cmath>
+#include <optional>
 #include <svg.h>
 #include <unistd.h>
 
 #include "device_c.hpp"
+#include "KeyConfigParser.hpp"
 
 #include "keys.h"
 
@@ -733,6 +735,11 @@ static svg_status_t render_image_callback( void * ptr, unsigned char * data, uns
     return SVG_STATUS_SUCCESS;
 }
 
+struct LaunchOptions {
+     optional<KeyConfigParser> key_config;
+     optional<string> device_file{};
+     optional<string> gcode_file{};
+};
 
 int main(int numArgs, char * args[] )
 {
@@ -741,25 +748,62 @@ int main(int numArgs, char * args[] )
     svg_length_t height;
     svg_render_engine_t engine;
 
-    if( numArgs != 3 )
-    {
-        cout<<"Usage: "<<args[0]<<" svgfile.svg iodevice"<<endl;
-        return 4;
-    }
+    #ifdef NO_COMPILE_TIME_KEYS
+        if( numArgs != 4 )
+        {
+            cout << "Usage: " << args[0] << " <svgfile.svg> <iodevice> <key config file>" << endl;
+            cout << "\t<key config file> - key configuration file, which contains cutting keys. For example (with fake keys):" << endl;
+            cout << endl;
+            cout << "\t\tMOVE_KEY_0  0x0123abcd" << endl;
+            cout << "\t\tMOVE_KEY_1  0x0123abcd" << endl;
+            cout << "\t\tMOVE_KEY_2  0x0123abcd" << endl;
+            cout << "\t\tMOVE_KEY_3  0x0123abcd" << endl;
+            cout << "\t\tLINE_KEY_0  0x0123abcd" << endl;
+            cout << "\t\tLINE_KEY_1  0x0123abcd" << endl;
+            cout << "\t\tLINE_KEY_2  0x0123abcd" << endl;
+            cout << "\t\tLINE_KEY_3  0x0123abcd" << endl;
+            cout << "\t\tCURVE_KEY_0  0x0123abcd" << endl;
+            cout << "\t\tCURVE_KEY_1  0x0123abcd" << endl;
+            cout << "\t\tCURVE_KEY_2  0x0123abcd" << endl;
+            cout << "\t\tCURVE_KEY_3  0x0123abcd" << endl;
+            return 4;
+        }
+        
+        std::string svgPath = args[1];
+        std::string devicePath = args[2];
+        std::string keyPath = args[3];
+    #else
+        if( numArgs != 3 )
+        {
+            cout<<"Usage: "<<args[0]<<" svgfile.svg iodevice"<<endl;
+            return 4;
+        }
 
-    Device::C c( args[2] );
+        std::string svgPath = args[1];
+        std::string devicePath = args[2];
+    #endif
+
+    Device::C c( devicePath );
     c.stop();
     c.start();
 
-    ckey_type move_key={MOVE_KEY_0, MOVE_KEY_1, MOVE_KEY_2, MOVE_KEY_3 };
+    #ifdef NO_COMPILE_TIME_KEYS
+          KeyConfigParser keyConfig{ keyPath };
+          auto moveKeys = keyConfig.moveKeys();
+          auto lineKeys = keyConfig.lineKeys();
+          auto curveKeys = keyConfig.curveKeys();
+          ckey_type move_key = { moveKeys.key0, moveKeys.key1, moveKeys.key2, moveKeys.key3 };
+          ckey_type line_key = { lineKeys.key0, lineKeys.key1, lineKeys.key2, lineKeys.key3 };
+          ckey_type curve_key = { curveKeys.key0, curveKeys.key1, curveKeys.key2, curveKeys.key3 };
+    #else
+          ckey_type move_key={MOVE_KEY_0, MOVE_KEY_1, MOVE_KEY_2, MOVE_KEY_3 };
+          ckey_type line_key={LINE_KEY_0, LINE_KEY_1, LINE_KEY_2, LINE_KEY_3 };
+          ckey_type curve_key={CURVE_KEY_0, CURVE_KEY_1, CURVE_KEY_2, CURVE_KEY_3 };
+    #endif
+
     c.set_move_key(move_key);
-
-    ckey_type line_key={LINE_KEY_0, LINE_KEY_1, LINE_KEY_2, LINE_KEY_3 };
     c.set_line_key(line_key);
-
-    ckey_type curve_key={CURVE_KEY_0, CURVE_KEY_1, CURVE_KEY_2, CURVE_KEY_3 };
     c.set_curve_key(curve_key);
-
 
     svg_render_state_t state(c);
 
@@ -806,7 +850,7 @@ int main(int numArgs, char * args[] )
     engine.close_path             = close_path_callback;
 
     svg_create( &svg );
-    svg_parse( svg, args[1] );
+    svg_parse( svg, svgPath );
 
     svg_get_size( svg, &width, &height );
     cout << "SVG: "<< width.value << "x" << height.value << endl;
